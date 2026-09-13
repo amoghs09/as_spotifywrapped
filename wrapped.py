@@ -24,6 +24,7 @@ def load_entries(paths):
 def analyze(entries):
     song_plays = defaultdict(int)          # (track, artist) -> play count
     artist_ms = defaultdict(int)           # artist -> total ms played
+    total_ms = 0                           # total ms played across everything
  
     for e in entries:
         track = e.get("master_metadata_track_name")
@@ -33,6 +34,9 @@ def analyze(entries):
         # Skip podcasts, audiobooks, or entries missing track/artist info
         if not track or not artist:
             continue
+        
+        # Total listening time counts everything: songs, podcasts, audiobooks
+        total_ms += ms_played
  
         # Count towards total listening time for the artist regardless of length
         artist_ms[artist] += ms_played
@@ -41,7 +45,7 @@ def analyze(entries):
         if ms_played >= MIN_MS_PLAYED:
             song_plays[(track, artist)] += 1
  
-    return song_plays, artist_ms
+    return song_plays, artist_ms, total_ms
  
  
 def print_top_songs(song_plays, top_n=5):
@@ -60,6 +64,13 @@ def print_top_artists(artist_ms, top_n=5):
     for i, (artist, ms) in enumerate(top_artists, start=1):
         minutes = ms / 60_000
         print(f"{i}. {artist} ({minutes:,.1f} minutes)")
+    
+def print_total_minutes(total_ms):
+    minutes = total_ms / 60_000
+    hours = minutes / 60
+    print(f"\n⏱️  Total Listening Time")
+    print("-" * 40)
+    print(f"{minutes:,.1f} minutes ({hours:,.1f} hours)")
  
  
 def main():
@@ -69,11 +80,12 @@ def main():
  
     paths = sys.argv[1:]
     entries = load_entries(paths)
-    song_plays, artist_ms = analyze(entries)
+    song_plays, artist_ms, total_ms = analyze(entries)
  
     print_top_songs(song_plays)
     print_top_artists(artist_ms)
- 
+    print_total_minutes(total_ms)
+
  
 if __name__ == "__main__":
     main()
