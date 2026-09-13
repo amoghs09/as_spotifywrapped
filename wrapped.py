@@ -51,6 +51,7 @@ def filter_by_date(entries, start, end):
 def analyze(entries):
     song_plays = defaultdict(int)          # (track, artist) -> play count
     artist_ms = defaultdict(int)           # artist -> total ms played
+    day_ms = defaultdict(int)              # NEW: "YYYY-MM-DD" -> total ms played that day
     total_ms = 0                           # total ms played across everything
  
     for e in entries:
@@ -64,6 +65,10 @@ def analyze(entries):
         
         # Total listening time counts everything: songs, podcasts, audiobooks
         total_ms += ms_played
+
+        day_str = e.get("ts", "")[:10]
+        if day_str:
+            day_ms[day_str] += ms_played
  
         # Count towards total listening time for the artist regardless of length
         artist_ms[artist] += ms_played
@@ -72,7 +77,7 @@ def analyze(entries):
         if ms_played >= MIN_MS_PLAYED:
             song_plays[(track, artist)] += 1
  
-    return song_plays, artist_ms, total_ms
+    return song_plays, artist_ms, day_ms, total_ms
  
  
 def print_top_songs(song_plays, top_n=5):
@@ -98,6 +103,17 @@ def print_total_minutes(total_ms):
     print(f"\n⏱️  Total Listening Time")
     print("-" * 40)
     print(f"{minutes:,.1f} minutes ({hours:,.1f} hours)")
+
+def print_top_day(day_ms):
+    print(f"\n📅 Day You Listened the Most")
+    print("-" * 40)
+    if not day_ms:
+        print("(none in this range)")
+        return
+    top_day, ms = max(day_ms.items(), key=lambda x: x[1])
+    minutes = ms / 60_000
+    hours = minutes / 60
+    print(f"{top_day} — {minutes:,.1f} minutes ({hours:,.1f} hours)")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Analyze Spotify streaming history.")
@@ -125,11 +141,12 @@ def main():
         range_label = "your entire history"
     print(f"Showing results for: {range_label}")
  
-    song_plays, artist_ms, total_ms = analyze(entries)
+    song_plays, artist_ms, day_ms, total_ms = analyze(entries)
  
     print_top_songs(song_plays, 50)
     print_top_artists(artist_ms, 20)
     print_total_minutes(total_ms)
+    print_top_day(day_ms)
 
  
 if __name__ == "__main__":
