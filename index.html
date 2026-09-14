@@ -352,6 +352,7 @@
       validateEntries(allEntries);
       hide(statusBox);
       renderSummary(allEntries);
+      debugLogAnalysis(allEntries); // TEMPORARY: see step 2 note above
     } catch (err) {
       hide(statusBox);
       showError(err.message);
@@ -410,6 +411,123 @@
   function formatDate(isoDate) {
     const d = new Date(isoDate + 'T00:00:00');
     return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  }
+
+  const MIN_MS_PLAYED = 30_000; // min "play" time
+
+  // JS map keys need to be a single value, so join pair into one string
+  function songKey(track, artist) {
+    return `${track}\u0000${artist}`;
+  }
+  function parseSongKey(key) {
+    const [track, artist] = key.split('\u0000');
+    return { track, artist };
+  }
+
+  // Same as Python's in_date_range()
+  function inDateRange(ts, start, end) {
+    const dateStr = ts.slice(0, 10);
+    if (start && dateStr < start) return false;
+    if (end && dateStr > end) return false;
+    return true;
+  }
+
+  // Same as Python's filter_by_date().
+  function filterByDateRange(entries, start, end) {
+    if (!start && !end) return entries;
+    return entries.filter(e => inDateRange(e.ts, start, end));
+  }
+
+  // Same as Python's analyze()
+  function analyzeEntries(entries) {
+    const songPlays = new Map();   // songKey(track, artist) -> play count
+    const artistMs = new Map();    // artist -> total ms played
+    const dayMs = new Map();       // "YYYY-MM-DD" -> total ms played that day
+    let totalMs = 0;               // total ms played across everything
+
+    for (const e of entries) {
+      const track = e.master_metadata_track_name;
+      const artist = e.master_metadata_album_artist_name;
+      const msPlayed = e.ms_played || 0;
+
+      // Total listening time counts everything: songs, podcasts, audiobooks
+      totalMs += msPlayed;
+
+      // Tally listening time by calendar day (also counts everything)
+      const dayStr = (e.ts || '').slice(0, 10);
+      if (dayStr) {
+        dayMs.set(dayStr, (dayMs.get(dayStr) || 0) + msPlayed);
+      }
+
+      // Skip podcasts, audiobooks, or entries missing track/artist info
+      if (!track || !artist) continue;
+
+      // Count towards total listening time for the artist regardless of length
+      artistMs.set(artist, (artistMs.get(artist) || 0) + msPlayed);
+
+      // Only count as a "play" if listened past the minimum threshold
+      if (msPlayed >= MIN_MS_PLAYED) {
+        const key = songKey(track, artist);
+        songPlays.set(key, (songPlays.get(key) || 0) + 1);
+      }
+    }
+
+    return { songPlays, artistMs, dayMs, totalMs };
+  }
+
+  function msToMinutes(ms) {
+    return ms / 60_000;
+  }
+
+  // Same as Python's print_top_songs()
+  function getTopSongs(songPlays, topN = 5) {
+    return Array.from(songPlays.entries())
+      .map(([key, plays]) => ({ ...parseSongKey(key), plays }))
+      .sort((a, b) => b.plays - a.plays)
+      .slice(0, topN);
+  }
+
+  // Same as Python's print_top_artists().
+  function getTopArtists(artistMs, topN = 5) {
+    return Array.from(artistMs.entries())
+      .map(([artist, ms]) => ({ artist, minutes: msToMinutes(ms) }))
+      .sort((a, b) => b.minutes - a.minutes)
+      .slice(0, topN);
+  }
+
+  // Same as Python's print_top_day().
+  function getTopDay(dayMs) {
+    let topDay = null;
+    let topMs = -1;
+    for (const [day, ms] of dayMs.entries()) {
+      if (ms > topMs) {
+        topMs = ms;
+        topDay = day;
+      }
+    }
+    return topDay ? { day: topDay, minutes: msToMinutes(topMs) } : null;
+  }
+
+  // TEMP : run the full analysis as soon as a file
+  // loads, using the whole date range and top 5, and log the results to
+  // the browser console (F12 → Console) so the logic can be checked
+  // against real data. 
+  function debugLogAnalysis(entries) {
+    const { songPlays, artistMs, dayMs, totalMs } = analyzeEntries(entries);
+
+    console.log('--- Track Record: step 2 debug output ---');
+    console.log('Top 5 songs:');
+    console.table(getTopSongs(songPlays, 5));
+
+    console.log('Top 5 artists:');
+    console.table(
+      getTopArtists(artistMs, 5).map(a => ({ artist: a.artist, minutes: a.minutes.toFixed(1) }))
+    );
+
+    console.log(`Total minutes: ${msToMinutes(totalMs).toFixed(1)}`);
+
+    const topDay = getTopDay(dayMs);
+    console.log('Top day:', topDay ? `${topDay.day} — ${topDay.minutes.toFixed(1)} minutes` : 'n/a');
   }
 </script>
 
