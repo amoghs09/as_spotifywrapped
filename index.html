@@ -207,6 +207,138 @@
     color: var(--ink-soft);
   }
 
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    margin-top: 24px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+  }
+ 
+  .control-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+ 
+  .control-field label {
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+    font-weight: 500;
+  }
+ 
+  .control-field input {
+    font-family: var(--font-body);
+    font-size: 0.95rem;
+    color: var(--ink);
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    padding: 8px 10px;
+  }
+ 
+  .control-field input[type="date"] { width: 160px; }
+  .control-field input[type="number"] { width: 80px; }
+
+  .results {
+    display: none;
+    margin-top: 44px;
+    padding-top: 36px;
+    border-top: 1.5px solid var(--ink);
+  }
+ 
+  .results.visible { display: block; }
+ 
+  .stats-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 36px;
+    margin-bottom: 40px;
+  }
+ 
+  .stat-block { flex: 1 1 200px; }
+ 
+  .stat-value {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(1.9rem, 6vw, 2.5rem);
+    line-height: 1.1;
+  }
+ 
+  .stat-label {
+    margin-top: 6px;
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+  }
+ 
+  .lists-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 44px;
+  }
+ 
+  .list-col { flex: 1 1 260px; }
+ 
+  .list-title {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 600;
+    font-size: 1.35rem;
+    margin: 0 0 14px;
+  }
+ 
+  .rank-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+ 
+  .rank-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--line);
+  }
+ 
+  .rank-list li:first-child { padding-top: 0; }
+ 
+  .rank-num {
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: var(--teal);
+    width: 1.3em;
+    flex-shrink: 0;
+  }
+ 
+  .rank-name {
+    flex: 1;
+    min-width: 0;
+    font-weight: 500;
+    overflow-wrap: break-word;
+  }
+ 
+  .rank-sub {
+    display: block;
+    color: var(--ink-soft);
+    font-weight: 400;
+    font-size: 0.85rem;
+    margin-top: 2px;
+  }
+ 
+  .rank-count {
+    color: var(--ink-soft);
+    font-size: 0.85rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+ 
+  .rank-empty {
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    padding: 8px 0;
+  }
+
   .reset-link {
     background: none;
     border: none;
@@ -281,6 +413,32 @@
       <div class="summary-footnote">Next up: pick a date range and choose how many top songs and artists to show.</div>
       <button class="reset-link" id="resetBtn">Load different file(s)</button>
     </div>
+
+        <!-- NEW (step 4): results display, filled in by renderResults() -->
+    <div class="results" id="resultsBox">
+      <div class="stats-row">
+        <div class="stat-block">
+          <div class="stat-value" id="totalMinutesValue">0</div>
+          <div class="stat-label" id="totalMinutesLabel">minutes listened</div>
+        </div>
+        <div class="stat-block">
+          <div class="stat-value" id="topDayValue">—</div>
+          <div class="stat-label" id="topDayLabel">your biggest day</div>
+        </div>
+      </div>
+ 
+      <div class="lists-row">
+        <div class="list-col">
+          <h2 class="list-title">Top Songs</h2>
+          <ol class="rank-list" id="topSongsList"></ol>
+        </div>
+        <div class="list-col">
+          <h2 class="list-title">Top Artists</h2>
+          <ol class="rank-list" id="topArtistsList"></ol>
+        </div>
+      </div>
+    </div>
+    
   </div>
 </div>
 
@@ -330,6 +488,7 @@
     fileListEl.innerHTML = '';
     hide(summaryBox);
     hide(errorBox);
+    hide(resultsBox);
   });
 
   function show(el) { el.classList.add('visible'); }
@@ -575,32 +734,91 @@
   });
   topNInput.addEventListener('input', runAnalysisPreview);
  
+  const resultsBox = document.getElementById('resultsBox');
+  const totalMinutesValueEl = document.getElementById('totalMinutesValue');
+  const totalMinutesLabelEl = document.getElementById('totalMinutesLabel');
+  const topDayValueEl = document.getElementById('topDayValue');
+  const topDayLabelEl = document.getElementById('topDayLabel');
+  const topSongsListEl = document.getElementById('topSongsList');
+  const topArtistsListEl = document.getElementById('topArtistsList');
+ 
+  // Track/artist names come from the person's own file, but they're
+  // inserted via innerHTML below, so escape anything that could be
+  // mistaken for markup (e.g. a title containing "<" or "&").
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[ch]));
+  }
+ 
+  // Renders one <ol> of ranked items. `mapItem` turns each item into
+  // { name, sub, count } so the same renderer works for both songs
+  // (name = track, sub = artist) and artists (name = artist, no sub).
+  function renderRankList(listEl, items, mapItem) {
+    listEl.innerHTML = '';
+    if (items.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'rank-empty';
+      li.textContent = 'No data in this range.';
+      listEl.appendChild(li);
+      return;
+    }
+    items.forEach((item, i) => {
+      const { name, sub, count } = mapItem(item);
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <span class="rank-num">${i + 1}</span>
+        <span class="rank-name">${escapeHtml(name)}${sub ? `<span class="rank-sub">${escapeHtml(sub)}</span>` : ''}</span>
+        <span class="rank-count">${count}</span>
+      `;
+      listEl.appendChild(li);
+    });
+  }
+ 
+  function renderResults(songs, artists, totalMs, topDay) {
+    renderRankList(topSongsListEl, songs, item => ({
+      name: item.track,
+      sub: item.artist,
+      count: `${item.plays} ${item.plays === 1 ? 'play' : 'plays'}`,
+    }));
+ 
+    renderRankList(topArtistsListEl, artists, item => ({
+      name: item.artist,
+      sub: null,
+      count: `${item.minutes.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} min`,
+    }));
+ 
+    const totalMinutes = msToMinutes(totalMs);
+    totalMinutesValueEl.textContent = totalMinutes.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    totalMinutesLabelEl.textContent = `minutes listened · ${(totalMinutes / 60).toLocaleString(undefined, { maximumFractionDigits: 1 })} hrs`;
+ 
+    if (topDay) {
+      topDayValueEl.textContent = formatDate(topDay.day);
+      topDayLabelEl.textContent = `your biggest day — ${topDay.minutes.toFixed(0)} min`;
+    } else {
+      topDayValueEl.textContent = '—';
+      topDayLabelEl.textContent = 'your biggest day';
+    }
+ 
+    show(resultsBox);
+  }
+ 
 
-  // TEMP : run the full analysis as soon as a file
-  // loads, using the whole date range and top 5, and log the results to
-  // the browser console (F12 → Console) so the logic can be checked
-  // against real data. 
-function runAnalysisPreview() {
+  function updateResults() {
     if (allEntries.length === 0) return;
  
     const { start, end, topN } = currentControlValues();
     const filtered = filterByDateRange(allEntries, start, end);
     const { songPlays, artistMs, dayMs, totalMs } = analyzeEntries(filtered);
  
-    console.log(`--- Track Record: debug output (${start || 'start'} to ${end || 'end'}, top ${topN}) ---`);
-    console.log(`Top ${topN} songs:`);
-    console.table(getTopSongs(songPlays, topN));
- 
-    console.log(`Top ${topN} artists:`);
-    console.table(
-      getTopArtists(artistMs, topN).map(a => ({ artist: a.artist, minutes: a.minutes.toFixed(1) }))
+    renderResults(
+      getTopSongs(songPlays, topN),
+      getTopArtists(artistMs, topN),
+      totalMs,
+      getTopDay(dayMs)
     );
- 
-    console.log(`Total minutes: ${msToMinutes(totalMs).toFixed(1)}`);
- 
-    const topDay = getTopDay(dayMs);
-    console.log('Top day:', topDay ? `${topDay.day} — ${topDay.minutes.toFixed(1)} minutes` : 'n/a');
   }
+
 </script>
 
 </body>
