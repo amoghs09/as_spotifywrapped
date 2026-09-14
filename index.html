@@ -262,6 +262,22 @@
     <div class="summary" id="summaryBox">
       <div class="summary-stat"><span class="accent" id="summaryCount">0</span> streams loaded</div>
       <div class="summary-range" id="summaryRange"></div>
+
+      <div class="controls" id="controlsBox">
+        <div class="control-field">
+          <label for="startDate">From</label>
+          <input type="date" id="startDate">
+        </div>
+        <div class="control-field">
+          <label for="endDate">To</label>
+          <input type="date" id="endDate">
+        </div>
+        <div class="control-field">
+          <label for="topN">Show top</label>
+          <input type="number" id="topN" min="1" max="25" value="5">
+        </div>
+      </div>
+
       <div class="summary-footnote">Next up: pick a date range and choose how many top songs and artists to show.</div>
       <button class="reset-link" id="resetBtn">Load different file(s)</button>
     </div>
@@ -406,6 +422,10 @@
       ? `Spanning ${formatDate(earliest)} to ${formatDate(latest)}`
       : '';
     show(summaryBox);
+
+    if (earliest && latest) {
+      initControls(earliest, latest);
+    }
   }
 
   function formatDate(isoDate) {
@@ -508,24 +528,76 @@
     return topDay ? { day: topDay, minutes: msToMinutes(topMs) } : null;
   }
 
+  const startDateInput = document.getElementById('startDate');
+  const endDateInput = document.getElementById('endDate');
+  const topNInput = document.getElementById('topN');
+ 
+  // Populate the date pickers with the range actually found in the
+  // uploaded data, and constrain min/max so an out-of-range date can't
+  // be picked. Called from renderSummary() once a file is loaded.
+  function initControls(earliest, latest) {
+    [startDateInput, endDateInput].forEach(input => {
+      input.min = earliest;
+      input.max = latest;
+    });
+    startDateInput.value = earliest;
+    endDateInput.value = latest;
+    topNInput.value = 5;
+  }
+ 
+  // If the person drags "From" past "To" (or vice versa), nudge the
+  // other field to match rather than allowing an inverted range.
+  function clampDateRange(changedField) {
+    if (startDateInput.value && endDateInput.value && startDateInput.value > endDateInput.value) {
+      if (changedField === 'start') {
+        endDateInput.value = startDateInput.value;
+      } else {
+        startDateInput.value = endDateInput.value;
+      }
+    }
+  }
+ 
+  function currentControlValues() {
+    return {
+      start: startDateInput.value || null,
+      end: endDateInput.value || null,
+      topN: Math.max(1, parseInt(topNInput.value, 10) || 5),
+    };
+  }
+ 
+  startDateInput.addEventListener('change', () => {
+    clampDateRange('start');
+    runAnalysisPreview();
+  });
+  endDateInput.addEventListener('change', () => {
+    clampDateRange('end');
+    runAnalysisPreview();
+  });
+  topNInput.addEventListener('input', runAnalysisPreview);
+ 
+
   // TEMP : run the full analysis as soon as a file
   // loads, using the whole date range and top 5, and log the results to
   // the browser console (F12 → Console) so the logic can be checked
   // against real data. 
-  function debugLogAnalysis(entries) {
-    const { songPlays, artistMs, dayMs, totalMs } = analyzeEntries(entries);
-
-    console.log('--- Track Record: step 2 debug output ---');
-    console.log('Top 5 songs:');
-    console.table(getTopSongs(songPlays, 5));
-
-    console.log('Top 5 artists:');
+function runAnalysisPreview() {
+    if (allEntries.length === 0) return;
+ 
+    const { start, end, topN } = currentControlValues();
+    const filtered = filterByDateRange(allEntries, start, end);
+    const { songPlays, artistMs, dayMs, totalMs } = analyzeEntries(filtered);
+ 
+    console.log(`--- Track Record: debug output (${start || 'start'} to ${end || 'end'}, top ${topN}) ---`);
+    console.log(`Top ${topN} songs:`);
+    console.table(getTopSongs(songPlays, topN));
+ 
+    console.log(`Top ${topN} artists:`);
     console.table(
-      getTopArtists(artistMs, 5).map(a => ({ artist: a.artist, minutes: a.minutes.toFixed(1) }))
+      getTopArtists(artistMs, topN).map(a => ({ artist: a.artist, minutes: a.minutes.toFixed(1) }))
     );
-
+ 
     console.log(`Total minutes: ${msToMinutes(totalMs).toFixed(1)}`);
-
+ 
     const topDay = getTopDay(dayMs);
     console.log('Top day:', topDay ? `${topDay.day} — ${topDay.minutes.toFixed(1)} minutes` : 'n/a');
   }
