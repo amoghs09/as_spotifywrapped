@@ -410,7 +410,6 @@
         </div>
       </div>
 
-      <div class="summary-footnote">Next up: pick a date range and choose how many top songs and artists to show.</div>
       <button class="reset-link" id="resetBtn">Load different file(s)</button>
     </div>
 
@@ -527,7 +526,7 @@
       validateEntries(allEntries);
       hide(statusBox);
       renderSummary(allEntries);
-      debugLogAnalysis(allEntries); // TEMPORARY: see step 2 note above
+      updateResults(); // FIXED: was calling debugLogAnalysis(), which no longer exists
     } catch (err) {
       hide(statusBox);
       showError(err.message);
@@ -726,13 +725,13 @@
  
   startDateInput.addEventListener('change', () => {
     clampDateRange('start');
-    runAnalysisPreview();
+    updateResults(); // FIXED: was runAnalysisPreview(), which no longer exists
   });
   endDateInput.addEventListener('change', () => {
     clampDateRange('end');
-    runAnalysisPreview();
+    updateResults(); // FIXED: was runAnalysisPreview(), which no longer exists
   });
-  topNInput.addEventListener('input', runAnalysisPreview);
+  topNInput.addEventListener('input', updateResults); // FIXED: was runAnalysisPreview
  
   const resultsBox = document.getElementById('resultsBox');
   const totalMinutesValueEl = document.getElementById('totalMinutesValue');
